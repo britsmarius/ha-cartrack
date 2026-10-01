@@ -1,0 +1,25 @@
+{
+  "entity": {
+    "device_tracker": {
+      "vehicle": { "default": "mdi:car" }
+    },
+    "sensor": {
+      "address": { "default": "mdi:map-marker" },
+      "supply_voltage": { "default": "mdi:car-battery" },
+      "odometer": { "default": "mdi:counter" },
+      "last_update": { "default": "mdi:clock-outline" },
+      "heading": { "default": "mdi:compass-outline" },
+      "altitude": { "default": "mdi:image-filter-hdr" }
+    },
+    "binary_sensor": {
+      "ignition": {
+        "default": "mdi:key-variant",
+        "state": { "off": "mdi:key-remove" }
+      },
+      "moving": {
+        "default": "mdi:car-arrow-right",
+        "state": { "off": "mdi:car-brake-parking" }
+      }
+    }
+  }
+}

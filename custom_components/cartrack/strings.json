@@ -1,0 +1,77 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Add a Cartrack account",
+        "description": "Use your Fleet API credentials from Fleetweb (Settings → API Settings). A read-only subuser API password is recommended. Add each Cartrack account as a separate entry.",
+        "data": {
+          "username": "API username",
+          "password": "API password",
+          "region": "Region",
+          "name": "Account name (optional)"
+        },
+        "data_description": {
+          "username": "The main account username shown in Fleetweb API Settings.",
+          "password": "An administrator or subuser API password.",
+          "region": "The country your Cartrack account is registered in.",
+          "name": "Shown in Home Assistant, e.g. Personal or Business."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Re-enter Cartrack API password",
+        "description": "Cartrack rejected the password for {username}. Generate a new API password in Fleetweb and enter it here.",
+        "data": {
+          "password": "API password"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Cartrack rejected the credentials. Check the username, the API password and the region.",
+      "cannot_connect": "Could not reach the Cartrack Fleet API for this region.",
+      "rate_limited": "Cartrack is rate limiting this account. Wait a minute and try again.",
+      "no_vehicles": "The account has no vehicles visible to these credentials.",
+      "unknown": "Unexpected error. Check the Home Assistant log."
+    },
+    "abort": {
+      "already_configured": "This Cartrack account is already added.",
+      "reauth_successful": "The new password works."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Polling",
+        "description": "Cartrack allows about 60 requests per minute per account.",
+        "data": {
+          "scan_interval_parked": "Interval while all vehicles are parked",
+          "scan_interval_moving": "Interval while any vehicle is moving",
+          "stale_timeout": "Treat a vehicle as parked after no updates for"
+        },
+        "data_description": {
+          "stale_timeout": "Stops fast polling when a vehicle loses signal while driving, for example in underground parking."
+        }
+      }
+    }
+  },
+  "entity": {
+    "device_tracker": {
+      "vehicle": {
+        "name": "Location"
+      }
+    },
+    "sensor": {
+      "speed": { "name": "Speed" },
+      "address": { "name": "Address" },
+      "supply_voltage": { "name": "Battery voltage" },
+      "odometer": { "name": "Odometer" },
+      "last_update": { "name": "Last update" },
+      "tracker_battery": { "name": "Tracker battery" },
+      "heading": { "name": "Heading" },
+      "altitude": { "name": "Altitude" }
+    },
+    "binary_sensor": {
+      "ignition": { "name": "Ignition" },
+      "moving": { "name": "Moving" }
+    }
+  }
+}
