@@ -1,13 +1,22 @@
 {
   "domain": "cartrack",
   "name": "Cartrack",
-  "codeowners": ["@britsmarius"],
+  "after_dependencies": [
+    "frontend",
+    "http",
+    "websocket_api"
+  ],
+  "codeowners": [
+    "@britsmarius"
+  ],
   "config_flow": true,
   "documentation": "https://github.com/britsmarius/ha-cartrack",
   "integration_type": "hub",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/britsmarius/ha-cartrack/issues",
-  "loggers": ["custom_components.cartrack"],
+  "loggers": [
+    "custom_components.cartrack"
+  ],
   "requirements": [],
-  "version": "0.1.0"
+  "version": "0.2.0"
 }

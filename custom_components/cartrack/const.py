@@ -18,6 +18,9 @@ DEFAULT_SCAN_INTERVAL_PARKED: Final = 60
 DEFAULT_SCAN_INTERVAL_MOVING: Final = 10
 DEFAULT_STALE_TIMEOUT: Final = 180
 
+FRONTEND_URL_BASE: Final = "/cartrack_frontend"
+CARD_FILENAME: Final = "cartrack-route-card.js"
+
 MIN_SCAN_INTERVAL: Final = 5
 MAX_SCAN_INTERVAL: Final = 3600
 

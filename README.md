@@ -60,6 +60,44 @@ API username, API password and region. Repeat for each Cartrack account.
 
 Polling intervals are under the integration's **Configure** button.
 
+## Daily route map
+
+The integration ships a dashboard card, `custom:cartrack-route-card`, that draws
+the route each vehicle drove on any day, with a date picker, previous/next day
+buttons and a toggle per vehicle. Under the map it shows each vehicle's
+distance, driving time and first/last movement, plus Cartrack's own trip list
+for that day; tap a trip to show only that trip on the map.
+
+Routes are read from Home Assistant's history of the device trackers, so they
+are kept for as long as your recorder keeps history (`purge_keep_days`, 10 days
+by default). If your recorder excludes `device_tracker`, include the vehicles:
+
+```yaml
+recorder:
+  include:
+    entities:
+      - device_tracker.my_car
+```
+
+The card is loaded automatically; add it from the card picker ("Cartrack
+routes") or in YAML:
+
+```yaml
+type: custom:cartrack-route-card
+title: Routes            # optional
+height: 420              # map height in px, optional
+show_trips: true         # optional
+entities:
+  - device_tracker.ranger
+  - entity: device_tracker.mini
+    name: Mini
+    color: "#ff9800"
+```
+
+Days follow Home Assistant's time zone. The trip list needs API credentials
+with access to Cartrack's trips; without it the card says so and still shows
+routes.
+
 ## Troubleshooting
 
 - **Invalid credentials:** check the region; a South African account only

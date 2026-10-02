@@ -57,5 +57,8 @@ class CartrackTracker(CartrackEntity, TrackerEntity):
             "speed": vehicle.speed,
             "heading": vehicle.heading,
             "ignition": vehicle.ignition,
+            # Recorded with every position, so a day's distance can be read
+            # back from history alongside the route.
+            "odometer": vehicle.odometer,
             "last_update": vehicle.updated.isoformat() if vehicle.updated else None,
         }

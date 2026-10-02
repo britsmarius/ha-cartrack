@@ -1,6 +1,6 @@
 """Minimal async client for the Cartrack Fleet API.
 
-Only the read-only vehicle status endpoint is used. The response shape is
+Only read-only endpoints are used: vehicle status and trips. The response shape is
 parsed defensively, because Cartrack nests some fields (location) and the
 field names differ slightly between accounts and API versions.
 """
@@ -10,8 +10,9 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, tzinfo
 from typing import Any
+from urllib.parse import quote
 
 import aiohttp
 
@@ -28,6 +29,10 @@ class CartrackError(Exception):
 
 class CartrackAuthError(CartrackError):
     """Credentials were rejected (HTTP 401/403)."""
+
+
+class CartrackForbiddenError(CartrackAuthError):
+    """HTTP 403: the credentials are valid but lack access to this endpoint."""
 
 
 class CartrackConnectionError(CartrackError):
@@ -74,8 +79,11 @@ def _to_bool(value: Any) -> bool | None:
     return str(value).strip().lower() in TRUTHY
 
 
-def parse_timestamp(value: Any) -> datetime | None:
-    """Parse an epoch or ISO-like timestamp into an aware datetime."""
+def parse_timestamp(value: Any, naive_tz: tzinfo = UTC) -> datetime | None:
+    """Parse an epoch or ISO-like timestamp into an aware datetime.
+
+    Timestamps without an offset are interpreted in ``naive_tz``.
+    """
     if value is None or value == "":
         return None
     text = str(value).strip()
@@ -96,7 +104,7 @@ def parse_timestamp(value: Any) -> datetime | None:
     except ValueError:
         return None
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=UTC)
+        parsed = parsed.replace(tzinfo=naive_tz)
     return parsed
 
 
@@ -212,6 +220,100 @@ class CartrackVehicle:
         )
 
 
+TS_FORMAT = "%Y-%m-%d %H:%M:%S"
+
+
+def _coordinates(value: Any) -> tuple[float, float] | None:
+    if not isinstance(value, dict):
+        return None
+    lat = _to_float(_first(value.get("latitude"), value.get("lat")))
+    lon = _to_float(_first(value.get("longitude"), value.get("lon"), value.get("lng")))
+    if lat is None or lon is None:
+        return None
+    return lat, lon
+
+
+@dataclass(slots=True)
+class CartrackTrip:
+    """One trip as reported by Cartrack's /trips endpoint."""
+
+    trip_id: str | None
+    start: datetime | None
+    end: datetime | None
+    start_location: str | None
+    end_location: str | None
+    start_coordinates: tuple[float, float] | None
+    end_coordinates: tuple[float, float] | None
+    distance_km: float | None
+    duration_seconds: float | None
+    max_speed: float | None
+    idle_seconds: float | None
+    driver: str | None
+    raw_start: str | None
+    raw_end: str | None
+
+    @classmethod
+    def from_api(cls, data: dict[str, Any], local_tz: tzinfo) -> CartrackTrip:
+        start = parse_timestamp(data.get("start_timestamp"), local_tz)
+        end = parse_timestamp(data.get("end_timestamp"), local_tz)
+
+        distance = _to_float(data.get("trip_distance"))
+        start_odo = _to_float(data.get("start_odometer"))
+        end_odo = _to_float(data.get("end_odometer"))
+        if distance is None and start_odo is not None and end_odo is not None:
+            # Odometer readings are in metres.
+            distance = (end_odo - start_odo) / 1000
+        elif distance is not None and distance > 2000:
+            # Some accounts report trip_distance in metres.
+            distance /= 1000
+
+        duration = _to_float(data.get("trip_duration_seconds"))
+        if duration is None and start and end:
+            duration = (end - start).total_seconds()
+
+        driver = " ".join(
+            part
+            for part in (data.get("driver_name"), data.get("driver_surname"))
+            if isinstance(part, str) and part.strip()
+        )
+        trip_id = data.get("trip_id")
+        return cls(
+            trip_id=None if trip_id is None else str(trip_id),
+            start=start,
+            end=end,
+            start_location=_first(data.get("start_location")),
+            end_location=_first(data.get("end_location")),
+            start_coordinates=_coordinates(data.get("start_coordinates")),
+            end_coordinates=_coordinates(data.get("end_coordinates")),
+            distance_km=None if distance is None else round(distance, 2),
+            duration_seconds=duration,
+            max_speed=_to_float(data.get("max_speed")),
+            idle_seconds=_to_float(data.get("idle_time_seconds")),
+            driver=driver or None,
+            raw_start=_first(data.get("start_timestamp")),
+            raw_end=_first(data.get("end_timestamp")),
+        )
+
+    def as_dict(self) -> dict[str, Any]:
+        """JSON-friendly form for the frontend."""
+        return {
+            "trip_id": self.trip_id,
+            "start": self.start.isoformat() if self.start else None,
+            "end": self.end.isoformat() if self.end else None,
+            "start_location": self.start_location,
+            "end_location": self.end_location,
+            "start_coordinates": self.start_coordinates,
+            "end_coordinates": self.end_coordinates,
+            "distance_km": self.distance_km,
+            "duration_seconds": self.duration_seconds,
+            "max_speed": self.max_speed,
+            "idle_seconds": self.idle_seconds,
+            "driver": self.driver,
+            "raw_start": self.raw_start,
+            "raw_end": self.raw_end,
+        }
+
+
 class CartrackClient:
     """Read-only client for one Cartrack account."""
 
@@ -245,16 +347,56 @@ class CartrackClient:
                 vehicles.append(vehicle)
         return vehicles
 
-    async def _get(self, path: str) -> Any:
+    async def async_get_trips(
+        self,
+        registration: str,
+        start: datetime,
+        end: datetime,
+        local_tz: tzinfo,
+        max_pages: int = 10,
+    ) -> list[CartrackTrip]:
+        """Trips for one vehicle between two moments (max 31 days apart).
+
+        Cartrack's timestamps carry no offset; they are sent and read in the
+        account's local time zone (``local_tz``).
+        """
+        params = {
+            "start_timestamp": start.astimezone(local_tz).strftime(TS_FORMAT),
+            "end_timestamp": end.astimezone(local_tz).strftime(TS_FORMAT),
+            "limit": 100,
+        }
+        path = f"/trips/{quote(registration, safe='')}"
+        trips: list[CartrackTrip] = []
+        for page in range(1, max_pages + 1):
+            payload = await self._get(path, {**params, "page": page})
+            items = payload.get("data", []) if isinstance(payload, dict) else payload
+            for item in items or []:
+                if isinstance(item, dict):
+                    trips.append(CartrackTrip.from_api(item, local_tz))
+            meta = payload.get("meta") if isinstance(payload, dict) else None
+            if not isinstance(meta, dict):
+                break
+            try:
+                if int(meta.get("current_page", page)) >= int(meta.get("last_page", 1)):
+                    break
+            except (TypeError, ValueError):
+                break
+        trips.sort(key=lambda trip: trip.start or datetime.max.replace(tzinfo=UTC))
+        return trips
+
+    async def _get(self, path: str, params: dict[str, Any] | None = None) -> Any:
         url = f"{self._base_url}{path}"
         try:
             async with self._session.get(
                 url,
                 auth=self._auth,
+                params=params,
                 headers={"Accept": "application/json"},
                 timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT.total_seconds()),
             ) as resp:
-                if resp.status in (401, 403):
+                if resp.status == 403:
+                    raise CartrackForbiddenError(f"HTTP 403 from Cartrack for {path}")
+                if resp.status == 401:
                     raise CartrackAuthError(f"HTTP {resp.status} from Cartrack")
                 if resp.status == 429:
                     raise CartrackRateLimitError(_retry_after(resp.headers))
