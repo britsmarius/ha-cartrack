@@ -58,11 +58,22 @@ EXPORT = "\n".join(
 
 def test_merge_export_joins_and_dedupes() -> None:
     rows = merge_export(EXPORT)
-    assert [row[0] for row in rows] == [1000, 3000, 4000, 5000]
-    # The parked duplicate keeps the newest odometer/speed.
+    # A parked stay keeps its first and last reading (when the car left).
+    assert [row[0] for row in rows] == [1000, 2000, 3000, 4000, 5000]
     assert rows[0] == [1000, -25.85, 28.15, 0.0, 100.0]
-    assert rows[1] == [3000, -25.84, 28.16, 40.0, 900.0]
-    assert rows[3] == [5000, -25.82, 28.18, None, None]
+    assert rows[2] == [3000, -25.84, 28.16, 40.0, 900.0]
+    assert rows[4] == [5000, -25.82, 28.18, None, None]
+
+
+def test_merge_export_collapses_long_stays() -> None:
+    times = [1000, 2000, 3000, 4000, 5000]
+    body = "\n".join(
+        [
+            _series("state_latitude", [-25.85] * 4 + [-25.84], times),
+            _series("state_longitude", [28.15] * 4 + [28.16], times),
+        ]
+    )
+    assert [row[0] for row in merge_export(body)] == [1000, 4000, 5000]
 
 
 async def _setup(hass: HomeAssistant, config_entry, options=None) -> None:
@@ -102,7 +113,7 @@ async def test_ws_route_reads_victoriametrics(
     msg = await client.receive_json()
     assert msg["success"], msg
     assert msg["result"]["source"] == "victoriametrics"
-    assert len(msg["result"]["points"]) == 4
+    assert len(msg["result"]["points"]) == 5
 
     call = next(c for c in aioclient_mock.mock_calls if "/api/v1/export" in str(c[1]))
     query = call[1].query

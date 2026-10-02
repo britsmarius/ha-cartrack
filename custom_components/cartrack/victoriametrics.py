@@ -132,9 +132,13 @@ def merge_export(body: str) -> list[list[float | None]]:
             sample.get("speed"),
             sample.get("odometer"),
         ]
-        if rows and rows[-1][1] == row[1] and rows[-1][2] == row[2]:
-            # Parked: keep the latest reading (odometer/speed), not a new point.
-            rows[-1][3:] = row[3:]
+        if rows and rows[-1][1:3] == row[1:3]:
+            # Parked: keep the first and the last reading of the stay, so the
+            # time the car left is known, but nothing in between.
+            if len(rows) >= 2 and rows[-2][1:3] == row[1:3]:
+                rows[-1] = row
+            else:
+                rows.append(row)
             continue
         rows.append(row)
     return rows

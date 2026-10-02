@@ -18,7 +18,7 @@
  * Served by the Cartrack integration; no dashboard resource is needed.
  */
 
-const CARD_VERSION = "0.3.0";
+const CARD_VERSION = "0.3.1";
 const PALETTE = ["#4285f4", "#ea4335", "#f9ab00", "#34a853", "#a142f4", "#ff6d01"];
 const MAX_PATH_POINTS = 800;
 const MIN_POINT_SPACING_KM = 0.02;
@@ -254,6 +254,7 @@ class CartrackRouteCard extends HTMLElement {
         .trip .where { color: var(--secondary-text-color); overflow: hidden;
           text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
         .trip .dist { white-space: nowrap; font-variant-numeric: tabular-nums; }
+        .trip.pending .where em { font-style: italic; }
         .note { color: var(--secondary-text-color); font-size: .85rem; margin: 2px 0 8px 20px; }
         @media (max-width: 500px) {
           .trip { grid-template-columns: auto auto; }
@@ -502,7 +503,7 @@ class CartrackRouteCard extends HTMLElement {
         odometer: Number.isFinite(odometer) ? odometer : null,
       });
     }
-    return points.sort((x, y) => x.t - y.t);
+    return this._collapseStops(points.sort((x, y) => x.t - y.t));
   }
 
   _pointsFromHistory(states) {
@@ -514,17 +515,33 @@ class CartrackRouteCard extends HTMLElement {
       if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
       let t = Date.parse(a.last_update);
       if (!Number.isFinite(t)) t = ((s.lu ?? s.lc) || 0) * 1000;
-      const prev = points[points.length - 1];
-      if (prev && prev.lat === lat && prev.lon === lon) continue;
-      points.push({
+      const point = {
         t,
         lat,
         lon,
         speed: Number.isFinite(Number(a.speed)) ? Number(a.speed) : null,
         odometer: Number.isFinite(Number(a.odometer)) ? Number(a.odometer) : null,
-      });
+      };
+      points.push(point);
     }
-    return points.sort((x, y) => x.t - y.t);
+    return this._collapseStops(points.sort((x, y) => x.t - y.t));
+  }
+
+  _collapseStops(points) {
+    // While parked, keep only the first and last reading of each stay, so the
+    // time a car left is known without drawing hundreds of identical points.
+    const out = [];
+    for (const p of points) {
+      const last = out[out.length - 1];
+      const before = out[out.length - 2];
+      if (last && last.lat === p.lat && last.lon === p.lon) {
+        if (before && before.lat === p.lat && before.lon === p.lon) out[out.length - 1] = p;
+        else out.push(p);
+        continue;
+      }
+      out.push(p);
+    }
+    return out;
   }
 
   _summarize(points) {
@@ -541,7 +558,8 @@ class CartrackRouteCard extends HTMLElement {
       gpsKm += step;
       const gap = (b.t - a.t) / 1000;
       if (gap > 0 && gap <= MAX_DRIVING_GAP_S) driving += gap;
-      if (first === null) first = a.t;
+      // After a long silence the departure time is unknown; start at b.
+      if (first === null) first = gap > MAX_DRIVING_GAP_S ? b.t : a.t;
       last = b.t;
     }
     const odos = points.map((p) => p.odometer).filter((v) => v !== null);
@@ -650,40 +668,98 @@ class CartrackRouteCard extends HTMLElement {
     this._summary.innerHTML = `<div class="label">${escapeHtml(this._dayLabel())}</div>${rows}`;
   }
 
+  _drivesFromPoints(points) {
+    // Group movement into drives, split by stops longer than MAX_DRIVING_GAP_S.
+    const drives = [];
+    let current = null;
+    for (let i = 1; i < points.length; i++) {
+      const a = points[i - 1];
+      const b = points[i];
+      const step = haversineKm(a, b);
+      const moved = step > MIN_POINT_SPACING_KM || (b.speed || 0) > 0;
+      if (!moved) continue;
+      if (current && (a.t - current.end) / 1000 <= MAX_DRIVING_GAP_S) {
+        current.end = b.t;
+        current.gpsKm += step;
+        current.points.push(b);
+      } else {
+        const start = (b.t - a.t) / 1000 > MAX_DRIVING_GAP_S ? b.t : a.t;
+        current = { start, end: b.t, gpsKm: step, points: [a, b] };
+        drives.push(current);
+      }
+    }
+    return drives
+      .map((drive) => {
+        const odos = drive.points.map((p) => p.odometer).filter((v) => v !== null);
+        let km = drive.gpsKm;
+        if (odos.length >= 2) {
+          const odoKm = (Math.max(...odos) - Math.min(...odos)) / 1000;
+          if (odoKm > 0 && odoKm < 2000) km = odoKm;
+        }
+        return { start: drive.start, end: drive.end, km };
+      })
+      .filter((drive) => drive.km >= 0.2);
+  }
+
+  _tripItems(entry, d) {
+    const items = [];
+    for (const trip of d.trips || []) {
+      const start = Date.parse(trip.start);
+      const end = Date.parse(trip.end);
+      if (!Number.isFinite(start)) continue;
+      let km = trip.distance_km;
+      const hours = Number.isFinite(end) ? (end - start) / 3600000 : 0;
+      // Some Cartrack accounts send metres; a km reading that implies
+      // more than 250 km/h on average must be metres.
+      if (Number.isFinite(km) && hours > 0 && km / hours > 250) km /= 1000;
+      items.push({
+        start,
+        end: Number.isFinite(end) ? end : start,
+        km,
+        where: [trip.start_location, trip.end_location].filter(Boolean),
+        pending: false,
+      });
+    }
+    // Drives in the recorded route that Cartrack has not listed (yet): a trip
+    // only appears there once the tracker reports the ignition off.
+    const margin = 120000;
+    for (const drive of this._drivesFromPoints(d.points || [])) {
+      const covered = items.some(
+        (trip) => !trip.pending && drive.start <= trip.end + margin && drive.end >= trip.start - margin
+      );
+      if (!covered) items.push({ ...drive, where: [], pending: true });
+    }
+    return items.sort((x, y) => x.start - y.start);
+  }
+
   _renderTrips(entry, d) {
     if (!this._config.show_trips) return "";
+    let note = "";
     if (d.tripsError === "forbidden") {
-      return `<div class="note">Trips are not available with these Cartrack API credentials.</div>`;
+      note = `<div class="note">Cartrack trips are not available with these API credentials; drives below come from the recorded route.</div>`;
+    } else if (d.tripsError) {
+      note = `<div class="note">Cartrack trips could not be loaded; drives below come from the recorded route.</div>`;
     }
-    if (d.tripsError) return `<div class="note">Trips could not be loaded.</div>`;
-    if (!d.trips.length) return "";
-    const items = d.trips
+    const items = this._tripItems(entry, d);
+    if (!items.length) return note;
+    const rows = items
       .map((trip) => {
-        const start = Date.parse(trip.start);
-        const end = Date.parse(trip.end);
-        if (!Number.isFinite(start)) return "";
         const selected =
-          this._selectedTrip?.entity === entry.entity && this._selectedTrip.start === start;
-        const where = [trip.start_location, trip.end_location]
-          .filter(Boolean)
-          .map(escapeHtml)
-          .join(" → ");
-        let km = trip.distance_km;
-        const hours = Number.isFinite(end) ? (end - start) / 3600000 : 0;
-        // Some Cartrack accounts send metres; a km reading that implies
-        // more than 250 km/h on average must be metres.
-        if (Number.isFinite(km) && hours > 0 && km / hours > 250) km /= 1000;
-        const dist = Number.isFinite(km) ? this._formatKm(km) : "";
-        return `<button class="trip ${selected ? "selected" : ""}" data-entity="${escapeHtml(entry.entity)}"
-            data-start="${start}" data-end="${Number.isFinite(end) ? end : start}"
+          this._selectedTrip?.entity === entry.entity && this._selectedTrip.start === trip.start;
+        const where = trip.pending
+          ? `<em>Not yet reported by Cartrack</em>`
+          : trip.where.map(escapeHtml).join(" → ");
+        const dist = Number.isFinite(trip.km) ? this._formatKm(trip.km) : "";
+        return `<button class="trip ${selected ? "selected" : ""} ${trip.pending ? "pending" : ""}"
+            data-entity="${escapeHtml(entry.entity)}" data-start="${trip.start}" data-end="${trip.end}"
             title="${selected ? "Show the whole day" : "Show this trip on the map"}">
-            <span class="when">${this._formatTime(start)}${Number.isFinite(end) ? ` – ${this._formatTime(end)}` : ""}</span>
+            <span class="when">${this._formatTime(trip.start)} – ${this._formatTime(trip.end)}</span>
             <span class="where">${where}</span>
             <span class="dist">${dist}</span>
           </button>`;
       })
       .join("");
-    return `<div class="trips">${items}</div>`;
+    return `${note}<div class="trips">${rows}</div>`;
   }
 
   _dayLabel() {
