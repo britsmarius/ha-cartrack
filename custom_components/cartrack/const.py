@@ -12,11 +12,16 @@ CONF_REGION: Final = "region"
 CONF_SCAN_INTERVAL_PARKED: Final = "scan_interval_parked"
 CONF_SCAN_INTERVAL_MOVING: Final = "scan_interval_moving"
 CONF_STALE_TIMEOUT: Final = "stale_timeout"
+CONF_VM_URL: Final = "victoriametrics_url"
+CONF_VM_USERNAME: Final = "victoriametrics_username"
+CONF_VM_PASSWORD: Final = "victoriametrics_password"
 
 DEFAULT_REGION: Final = "za"
 DEFAULT_SCAN_INTERVAL_PARKED: Final = 60
 DEFAULT_SCAN_INTERVAL_MOVING: Final = 10
 DEFAULT_STALE_TIMEOUT: Final = 180
+
+SUGGESTED_VM_URL: Final = "http://a0d7b954-victoriametrics:8428"
 
 FRONTEND_URL_BASE: Final = "/cartrack_frontend"
 CARD_FILENAME: Final = "cartrack-route-card.js"

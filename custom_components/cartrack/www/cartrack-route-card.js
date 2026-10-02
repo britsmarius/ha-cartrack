@@ -18,7 +18,7 @@
  * Served by the Cartrack integration; no dashboard resource is needed.
  */
 
-const CARD_VERSION = "0.2.0";
+const CARD_VERSION = "0.3.0";
 const PALETTE = ["#4285f4", "#ea4335", "#f9ab00", "#34a853", "#a142f4", "#ff6d01"];
 const MAX_PATH_POINTS = 800;
 const MIN_POINT_SPACING_KM = 0.02;
@@ -439,6 +439,13 @@ class CartrackRouteCard extends HTMLElement {
       .catch((err) => ({ __error: err }));
 
     const day = this._day;
+    // Long-term history from VictoriaMetrics, when the account has it set up.
+    const longTermPromises = ids.map((id) =>
+      this._hass
+        .callWS({ type: "cartrack/route", entity_id: id, date: day })
+        .then((res) => res.points || [])
+        .catch(() => null)
+    );
     const tripPromises = this._config.show_trips
       ? ids.map((id) =>
           this._hass
@@ -448,10 +455,15 @@ class CartrackRouteCard extends HTMLElement {
         )
       : ids.map(() => Promise.resolve({ trips: [] }));
 
-    const [history, ...trips] = await Promise.all([historyPromise, ...tripPromises]);
+    const [history, longTerm, trips] = await Promise.all([
+      historyPromise,
+      Promise.all(longTermPromises),
+      Promise.all(tripPromises),
+    ]);
     if (token !== this._loadToken) return; // a newer request won
 
-    if (history?.__error) {
+    const usable = longTerm.some((points) => points && points.length);
+    if (history?.__error && !usable) {
       this._data = {};
       this._setOverlay(`Could not read history: ${history.__error.message || history.__error}`);
       this._renderSummary();
@@ -460,14 +472,37 @@ class CartrackRouteCard extends HTMLElement {
 
     const data = {};
     ids.forEach((id, i) => {
+      const fromRecorder = history?.__error ? [] : this._pointsFromHistory(history?.[id] || []);
+      const fromLongTerm = this._pointsFromRows(longTerm[i]);
+      // Prefer whichever source has more of the day (VictoriaMetrics, except
+      // for the last minute or two it may not have received yet).
+      const useLongTerm = fromLongTerm.length && fromLongTerm.length >= fromRecorder.length * 0.8;
       data[id] = {
-        points: this._pointsFromHistory(history?.[id] || []),
+        points: useLongTerm ? fromLongTerm : fromRecorder,
+        source: useLongTerm ? "VictoriaMetrics" : "recorder",
         trips: trips[i].trips || [],
         tripsError: trips[i].error,
       };
     });
     this._data = data;
     this._renderAll(refit);
+  }
+
+  _pointsFromRows(rows) {
+    if (!Array.isArray(rows)) return [];
+    const points = [];
+    for (const row of rows) {
+      const [t, lat, lon, speed, odometer] = row;
+      if (!Number.isFinite(t) || !Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+      points.push({
+        t,
+        lat,
+        lon,
+        speed: Number.isFinite(speed) ? speed : null,
+        odometer: Number.isFinite(odometer) ? odometer : null,
+      });
+    }
+    return points.sort((x, y) => x.t - y.t);
   }
 
   _pointsFromHistory(states) {
@@ -607,7 +642,8 @@ class CartrackRouteCard extends HTMLElement {
              <span>driving <b>${this._formatDuration(s.driving)}</b></span>
              <span>${this._formatTime(s.first)} – ${this._formatTime(s.last)}</span>`
           : `<span>${d.points.length ? "Parked all day" : "No positions recorded"}</span>`;
-        return `<div class="row">${dot}<span class="name">${name}</span>
+        const source = d.source ? ` title="Positions from ${escapeHtml(d.source)}"` : "";
+        return `<div class="row">${dot}<span class="name"${source}>${name}</span>
             <span class="stats">${stats}</span></div>${this._renderTrips(e, d)}`;
       })
       .join("");

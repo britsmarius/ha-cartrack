@@ -68,16 +68,30 @@ buttons and a toggle per vehicle. Under the map it shows each vehicle's
 distance, driving time and first/last movement, plus Cartrack's own trip list
 for that day; tap a trip to show only that trip on the map.
 
-Routes are read from Home Assistant's history of the device trackers, so they
-are kept for as long as your recorder keeps history (`purge_keep_days`, 10 days
-by default). If your recorder excludes `device_tracker`, include the vehicles:
+Routes come from one of two places:
 
-```yaml
-recorder:
-  include:
-    entities:
-      - device_tracker.my_car
-```
+- **VictoriaMetrics (long-term).** If the InfluxDB integration sends your
+  states to VictoriaMetrics, set its URL under the integration's
+  **Configure** (for the VictoriaMetrics app: `http://a0d7b954-victoriametrics:8428`).
+  Routes are then available for as long as VictoriaMetrics keeps data. The
+  tracker's latitude, longitude, speed and odometer are read from the series
+  the InfluxDB integration writes (`*_latitude` etc. tagged with the
+  tracker's `entity_id`).
+- **The recorder (default).** Without VictoriaMetrics, routes are read from
+  Home Assistant's history and last as long as the recorder keeps it
+  (`purge_keep_days`, 10 days by default). If your recorder excludes
+  `device_tracker`, include the vehicles:
+
+  ```yaml
+  recorder:
+    include:
+      entities:
+        - device_tracker.my_car
+  ```
+
+The card uses VictoriaMetrics when it has the day and falls back to the
+recorder otherwise. Hovering a vehicle's name in the summary shows which
+source was used.
 
 The card is loaded automatically; add it from the card picker ("Cartrack
 routes") or in YAML:

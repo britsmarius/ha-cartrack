@@ -40,17 +40,25 @@
   "options": {
     "step": {
       "init": {
-        "title": "Polling",
-        "description": "Cartrack allows about 60 requests per minute per account.",
+        "title": "Options",
+        "description": "Polling: Cartrack allows about 60 requests per minute per account.\n\nRoute history: the route card reads Home Assistant's recorder, which keeps only a few days. If the InfluxDB integration sends your states to VictoriaMetrics, enter its URL (for the VictoriaMetrics app: {suggested_url}) and routes are read from there instead, for as long as VictoriaMetrics keeps data.",
         "data": {
           "scan_interval_parked": "Interval while all vehicles are parked",
           "scan_interval_moving": "Interval while any vehicle is moving",
-          "stale_timeout": "Treat a vehicle as parked after no updates for"
+          "stale_timeout": "Treat a vehicle as parked after no updates for",
+          "victoriametrics_url": "VictoriaMetrics URL (optional)",
+          "victoriametrics_username": "VictoriaMetrics username (optional)",
+          "victoriametrics_password": "VictoriaMetrics password (optional)"
         },
         "data_description": {
-          "stale_timeout": "Stops fast polling when a vehicle loses signal while driving, for example in underground parking."
+          "stale_timeout": "Stops fast polling when a vehicle loses signal while driving, for example in underground parking.",
+          "victoriametrics_url": "Leave empty to use the recorder's history.",
+          "victoriametrics_username": "Only needed when VictoriaMetrics requires a login."
         }
       }
+    },
+    "error": {
+      "vm_cannot_connect": "Could not reach VictoriaMetrics at this URL."
     }
   },
   "entity": {
@@ -60,18 +68,38 @@
       }
     },
     "sensor": {
-      "speed": { "name": "Speed" },
-      "address": { "name": "Address" },
-      "supply_voltage": { "name": "Battery voltage" },
-      "odometer": { "name": "Odometer" },
-      "last_update": { "name": "Last update" },
-      "tracker_battery": { "name": "Tracker battery" },
-      "heading": { "name": "Heading" },
-      "altitude": { "name": "Altitude" }
+      "speed": {
+        "name": "Speed"
+      },
+      "address": {
+        "name": "Address"
+      },
+      "supply_voltage": {
+        "name": "Battery voltage"
+      },
+      "odometer": {
+        "name": "Odometer"
+      },
+      "last_update": {
+        "name": "Last update"
+      },
+      "tracker_battery": {
+        "name": "Tracker battery"
+      },
+      "heading": {
+        "name": "Heading"
+      },
+      "altitude": {
+        "name": "Altitude"
+      }
     },
     "binary_sensor": {
-      "ignition": { "name": "Ignition" },
-      "moving": { "name": "Moving" }
+      "ignition": {
+        "name": "Ignition"
+      },
+      "moving": {
+        "name": "Moving"
+      }
     }
   }
 }

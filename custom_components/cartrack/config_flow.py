@@ -24,6 +24,7 @@ from homeassistant.helpers.selector import (
     TextSelectorType,
 )
 
+from . import victoriametrics as vm
 from .api import (
     CartrackAuthError,
     CartrackClient,
@@ -36,6 +37,9 @@ from .const import (
     CONF_SCAN_INTERVAL_MOVING,
     CONF_SCAN_INTERVAL_PARKED,
     CONF_STALE_TIMEOUT,
+    CONF_VM_PASSWORD,
+    CONF_VM_URL,
+    CONF_VM_USERNAME,
     DEFAULT_REGION,
     DEFAULT_SCAN_INTERVAL_MOVING,
     DEFAULT_SCAN_INTERVAL_PARKED,
@@ -44,6 +48,7 @@ from .const import (
     MAX_SCAN_INTERVAL,
     MIN_SCAN_INTERVAL,
     REGIONS,
+    SUGGESTED_VM_URL,
 )
 from .coordinator import CartrackConfigEntry
 
@@ -163,7 +168,7 @@ class CartrackConfigFlow(ConfigFlow, domain=DOMAIN):
     @staticmethod
     @callback
     def async_get_options_flow(config_entry: CartrackConfigEntry) -> OptionsFlow:
-        """Polling options."""
+        """Polling and route history options."""
         return CartrackOptionsFlow()
 
 
@@ -179,19 +184,45 @@ def _seconds_selector(minimum: int, maximum: int) -> NumberSelector:
     )
 
 
+INTERVAL_KEYS = (
+    CONF_SCAN_INTERVAL_PARKED,
+    CONF_SCAN_INTERVAL_MOVING,
+    CONF_STALE_TIMEOUT,
+)
+URL_SELECTOR = TextSelector(TextSelectorConfig(type=TextSelectorType.URL))
+
+
 class CartrackOptionsFlow(OptionsFlow):
-    """Tune polling intervals."""
+    """Polling intervals and the optional VictoriaMetrics route source."""
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Show polling options."""
+        """Show the options."""
+        errors: dict[str, str] = {}
         if user_input is not None:
-            return self.async_create_entry(
-                data={key: int(value) for key, value in user_input.items()}
-            )
+            data: dict[str, Any] = {
+                key: int(user_input[key]) for key in INTERVAL_KEYS if key in user_input
+            }
+            url = (user_input.get(CONF_VM_URL) or "").strip().rstrip("/")
+            username = (user_input.get(CONF_VM_USERNAME) or "").strip()
+            password = user_input.get(CONF_VM_PASSWORD) or ""
+            if url:
+                try:
+                    await vm.async_check(
+                        async_get_clientsession(self.hass), url, username, password
+                    )
+                except vm.VictoriaMetricsError as err:
+                    _LOGGER.debug("VictoriaMetrics check failed: %s", err)
+                    errors[CONF_VM_URL] = "vm_cannot_connect"
+                data[CONF_VM_URL] = url
+                if username:
+                    data[CONF_VM_USERNAME] = username
+                    data[CONF_VM_PASSWORD] = password
+            if not errors:
+                return self.async_create_entry(data=data)
 
-        options = self.config_entry.options
+        options = {**self.config_entry.options, **(user_input or {})}
         schema = vol.Schema(
             {
                 vol.Required(
@@ -210,6 +241,23 @@ class CartrackOptionsFlow(OptionsFlow):
                     CONF_STALE_TIMEOUT,
                     default=options.get(CONF_STALE_TIMEOUT, DEFAULT_STALE_TIMEOUT),
                 ): _seconds_selector(30, 3600),
+                vol.Optional(
+                    CONF_VM_URL,
+                    description={"suggested_value": options.get(CONF_VM_URL)},
+                ): URL_SELECTOR,
+                vol.Optional(
+                    CONF_VM_USERNAME,
+                    description={"suggested_value": options.get(CONF_VM_USERNAME)},
+                ): str,
+                vol.Optional(
+                    CONF_VM_PASSWORD,
+                    description={"suggested_value": options.get(CONF_VM_PASSWORD)},
+                ): PASSWORD_SELECTOR,
             }
         )
-        return self.async_show_form(step_id="init", data_schema=schema)
+        return self.async_show_form(
+            step_id="init",
+            data_schema=schema,
+            errors=errors,
+            description_placeholders={"suggested_url": SUGGESTED_VM_URL},
+        )
