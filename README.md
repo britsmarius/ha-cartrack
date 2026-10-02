@@ -60,6 +60,42 @@ API username, API password and region. Repeat for each Cartrack account.
 
 Polling intervals are under the integration's **Configure** button.
 
+## Fleet view
+
+`custom:cartrack-fleet-card` is a full-screen fleet tracking view: a vehicle
+list beside a live map, in the style of a fleet tracking app.
+
+- **Vehicle list** with search. Each vehicle shows its status (*Driving ·
+  62 km/h*, *Parked at Home · 3 h ago*, *Ignition on · no signal*,
+  *Offline*), an ignition icon and a battery icon coloured by voltage.
+- **Map** with every vehicle. Select one to zoom to it.
+- **Details popup** for the selected vehicle: last update, status,
+  address, speed, odometer and battery, with buttons for today's route,
+  following the vehicle on the map, directions, and Home Assistant's
+  details dialog.
+- **Trips tab**: pick a day to see routes and trips (Cartrack's and drives
+  found in the route) for the selected vehicle, or all vehicles.
+
+Put it in a **panel** view so it fills the screen:
+
+```yaml
+views:
+  - title: Fleet
+    type: panel
+    cards:
+      - type: custom:cartrack-fleet-card
+        offline_hours: 168     # optional
+        entities:
+          - device_tracker.ranger
+          - entity: device_tracker.mini
+            name: Mini
+            color: "#ea4335"
+            icon: mdi:car-hatchback
+```
+
+Battery voltage and the moving state are found automatically from the
+vehicle's other Cartrack entities.
+
 ## Daily route map
 
 The integration ships a dashboard card, `custom:cartrack-route-card`, that draws
