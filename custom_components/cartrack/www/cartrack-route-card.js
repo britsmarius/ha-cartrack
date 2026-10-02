@@ -632,7 +632,12 @@ class CartrackRouteCard extends HTMLElement {
           .filter(Boolean)
           .map(escapeHtml)
           .join(" → ");
-        const dist = Number.isFinite(trip.distance_km) ? this._formatKm(trip.distance_km) : "";
+        let km = trip.distance_km;
+        const hours = Number.isFinite(end) ? (end - start) / 3600000 : 0;
+        // Some Cartrack accounts send metres; a km reading that implies
+        // more than 250 km/h on average must be metres.
+        if (Number.isFinite(km) && hours > 0 && km / hours > 250) km /= 1000;
+        const dist = Number.isFinite(km) ? this._formatKm(km) : "";
         return `<button class="trip ${selected ? "selected" : ""}" data-entity="${escapeHtml(entry.entity)}"
             data-start="${start}" data-end="${Number.isFinite(end) ? end : start}"
             title="${selected ? "Show the whole day" : "Show this trip on the map"}">

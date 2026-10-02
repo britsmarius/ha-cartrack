@@ -233,6 +233,20 @@ def _coordinates(value: Any) -> tuple[float, float] | None:
     return lat, lon
 
 
+MAX_PLAUSIBLE_AVG_KMH = 250
+
+
+def _looks_like_metres(distance: float, duration_seconds: float | None) -> bool:
+    """True when a trip distance only makes sense in metres.
+
+    Read as km, a short trip like 800 (metres) over 4 minutes would mean
+    thousands of km/h, so the unit must be metres.
+    """
+    if duration_seconds and duration_seconds > 0:
+        return distance / (duration_seconds / 3600) > MAX_PLAUSIBLE_AVG_KMH
+    return distance > 2000
+
+
 @dataclass(slots=True)
 class CartrackTrip:
     """One trip as reported by Cartrack's /trips endpoint."""
@@ -257,19 +271,19 @@ class CartrackTrip:
         start = parse_timestamp(data.get("start_timestamp"), local_tz)
         end = parse_timestamp(data.get("end_timestamp"), local_tz)
 
+        duration = _to_float(data.get("trip_duration_seconds"))
+        if duration is None and start and end:
+            duration = (end - start).total_seconds()
+
         distance = _to_float(data.get("trip_distance"))
         start_odo = _to_float(data.get("start_odometer"))
         end_odo = _to_float(data.get("end_odometer"))
         if distance is None and start_odo is not None and end_odo is not None:
             # Odometer readings are in metres.
             distance = (end_odo - start_odo) / 1000
-        elif distance is not None and distance > 2000:
-            # Some accounts report trip_distance in metres.
+        elif distance is not None and _looks_like_metres(distance, duration):
+            # Some accounts report trip_distance in metres, others in km.
             distance /= 1000
-
-        duration = _to_float(data.get("trip_duration_seconds"))
-        if duration is None and start and end:
-            duration = (end - start).total_seconds()
 
         driver = " ".join(
             part

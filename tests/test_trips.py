@@ -50,6 +50,22 @@ def test_trip_distance_fallbacks() -> None:
     assert CartrackTrip.from_api(no_distance, SAST).distance_km == 12.0
     metres = {**TRIP, "trip_distance": 12000}
     assert CartrackTrip.from_api(metres, SAST).distance_km == 12.0
+    # Real business-account trip: 800 m in 4 min 16 s.
+    short = {
+        **TRIP,
+        "start_timestamp": "2026-10-01 10:25:16+02",
+        "end_timestamp": "2026-10-01 10:29:32+02",
+        "trip_distance": 800,
+    }
+    assert CartrackTrip.from_api(short, SAST).distance_km == 0.8
+    # Real personal-account trip: 23.4 km in 36 min stays in km.
+    long = {
+        **TRIP,
+        "start_timestamp": "2026-10-02 06:09:08+02",
+        "end_timestamp": "2026-10-02 06:45:06+02",
+        "trip_distance": 23.4,
+    }
+    assert CartrackTrip.from_api(long, SAST).distance_km == 23.4
     offset = {**TRIP, "start_timestamp": "2026-10-02T05:30:00Z"}
     assert CartrackTrip.from_api(offset, SAST).start == datetime(
         2026, 10, 2, 5, 30, tzinfo=UTC
