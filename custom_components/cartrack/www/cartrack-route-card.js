@@ -19,7 +19,7 @@
  * Served by the Cartrack integration; no dashboard resource is needed.
  */
 
-const CARD_VERSION = "0.4.0";
+const CARD_VERSION = "0.4.1";
 const PALETTE = ["#4285f4", "#ea4335", "#f9ab00", "#34a853", "#a142f4", "#ff6d01"];
 const MAX_PATH_POINTS = 800;
 const MIN_POINT_SPACING_KM = 0.02;
@@ -524,7 +524,7 @@ class CartrackRouteCard extends CartrackBase {
         .chip.off .dot { background: transparent !important; border: 2px solid currentColor; }
         .map { position: relative; height: ${height}px; border-top: 1px solid var(--divider-color);
           border-bottom: 1px solid var(--divider-color); }
-        ha-map { position: absolute; inset: 0; }
+        ha-map { position: absolute; inset: 0; width: 100%; height: 100%; }
         .overlay { position: absolute; inset: 0; display: flex; align-items: center;
           justify-content: center; text-align: center; padding: 24px; pointer-events: none;
           color: var(--secondary-text-color); z-index: 1; }
@@ -1070,7 +1070,7 @@ class CartrackFleetCard extends CartrackBase {
           color: var(--secondary-text-color); }
         .tabs button.active { color: var(--primary-color); }
         .map { position: relative; min-height: 0; min-width: 0; }
-        ha-map { position: absolute; inset: 0; }
+        ha-map { position: absolute; inset: 0; width: 100%; height: 100%; }
         .overlay { position: absolute; inset: 0; display: flex; align-items: center;
           justify-content: center; text-align: center; padding: 24px; pointer-events: none;
           color: var(--secondary-text-color); z-index: 1; }
